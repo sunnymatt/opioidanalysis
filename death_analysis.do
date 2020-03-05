@@ -12,7 +12,7 @@ set more off
 
 // matthew's directory
 cd "C:\Users\matth\OneDrive - Leland Stanford Junior University\Senior Year\Winter Quarter\PUBLPOL 104\opioidanalysis\"
-use "opioid_death.dta"
+use "opioid_death_statevar.dta"
 
 
 *** DATA CLEANING **************************************************************
@@ -57,14 +57,14 @@ drop age_adjusted_rate
 // graph total opioid deaths
 preserve 
 collapse (sum) deaths population, by(year)
-scatter deaths year, ///
+twoway (connected deaths year), ///
 	xtitle("Year") ///
 	ytitle("Total Opioid-Related Deaths") ///
 	title("Opioid-Related Deaths in the USA, 1999-2018") ///
 	name(total_deaths, replace)
 
 gen death_rate = 1000 * deaths / population
-scatter death_rate year, ///
+twoway (connected death_rate year), ///
 	xtitle("Year") ///
 	ytitle("Opioid-Related Deaths per 100,000") ///
 	title("Opioid-Related Death Rate in the USA, 1999-2018") ///
@@ -75,7 +75,7 @@ restore
 preserve 
 collapse (sum) deaths population, by(year gender)
 gen death_rate = 1000 * deaths / population
-twoway (scatter death_rate year if gender==0) (scatter death_rate year if gender==1), ///
+twoway (connected death_rate year if gender==0) (connected death_rate year if gender==1), ///
 	xtitle("Year") ///
 	ytitle("Opioid-Related Deaths per 100,000") ///
 	yscale(titlegap(5)) ///
@@ -101,4 +101,19 @@ twoway (connected death_rate year if race==0) ///
 // interestingly, death rates are highest for native americans and have 
 // risen faster than for any other racial group!
 // https://www.pewtrusts.org/en/research-and-analysis/blogs/stateline/2019/09/09/in-cherokee-country-opioid-crisis-seen-as-existential-threat
+restore
+
+// trends for states that expanded versus didn't expand
+preserve
+collapse (sum) deaths population (mean) expanded, by(year state)
+gen death_rate = 1000 * deaths / population
+collapse (mean) death_rate, by(year expanded)
+twoway (connected death_rate year if expanded==0) ///
+	(connected death_rate year if expanded==1), ///
+	xtitle("Year") ///
+	ytitle("Opioid-Related Deaths per 100,000") ///
+	yscale(titlegap(5)) ///
+	legend(label(1 "Non-expansion") label(2 "Expansion")) ///
+	title("Opioid-Related Death Rate by Medicaid Expansion Status in the USA, 1999-2018", size(medium)) ///
+	name(death_rate_expansion, replace)
 restore
