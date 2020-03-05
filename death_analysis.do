@@ -105,15 +105,192 @@ restore
 
 // trends for states that expanded versus didn't expand
 preserve
-collapse (sum) deaths population (mean) expanded, by(year state)
+collapse (sum) deaths population (mean) expanded state_med_inc-state_blk_pct, by(year state)
 gen death_rate = 1000 * deaths / population
-collapse (mean) death_rate, by(year expanded)
+collapse (mean) death_rate state_med_inc-state_blk_pct, by(year expanded)
 twoway (connected death_rate year if expanded==0) ///
 	(connected death_rate year if expanded==1), ///
 	xtitle("Year") ///
 	ytitle("Opioid-Related Deaths per 100,000") ///
 	yscale(titlegap(5)) ///
 	legend(label(1 "Non-expansion") label(2 "Expansion")) ///
+	xline(2014, lc(538g)) ///
 	title("Opioid-Related Death Rate by Medicaid Expansion Status in the USA, 1999-2018", size(medium)) ///
 	name(death_rate_expansion, replace)
+
+// median incomes seem different in expansion vs non-expansion states;
+// surprisingly, hgiher in expansion states
+twoway (connected state_med_inc year if expanded==0) ///
+	(connected state_med_inc year if expanded==1), ///
+	xtitle("Year") ///
+	ytitle("Income ($)") ///
+	yscale(titlegap(5)) ///
+	legend(label(1 "Non-expansion") label(2 "Expansion")) ///
+	title("Average Median Income in Expansion vs Non-Expansion States, 1999-2018", size(medium)) ///
+	name(income_time, replace)
+restore 
+
+preserve
+drop if year < 2010
+collapse (mean) expanded state_wh_pct state_blk_pct, by(year state)
+collapse (mean) state_wh_pct state_blk_pct, by(year expanded)
+twoway (connected state_wh_pct year if expanded==0, lc(538b) mc(none) lw(medthick)) ///
+	(connected state_blk_pct year if expanded==0, lp(dash) lc(538b) mc(none) lw(medthick)) ///
+	(connected state_wh_pct year if expanded==1,  lc(538r) mc(none) lw(medthick)) ///
+	(connected state_blk_pct year if expanded==1, lp(dash) lc(538r) mc(none) lw(medthick)), ///
+	xtitle("Year") ///
+	ytitle("% of population") ///
+	yscale(titlegap(5) r(0 1)) ///
+	legend(label(1 "Non-expansion, white") label(2 "Non-expansion, black") label(3 "Expansion, white") label(4 "Expansion, black")) ///
+	title("Racial Composition of Expansion vs Non-Expansion States, 1999-2018", size(medium)) ///
+	name(race_time, replace)
 restore
+
+preserve
+// per-state opioid death rate trends
+collapse (sum) deaths population (mean) expanded state_med_inc-state_blk_pct, by(year state)
+gen death_rate = 1000 * deaths / population
+
+// in order to generate pretty graphs
+egen xmin = min(year), by(state)
+egen xmax = max(year), by(state)
+gsort -xmin -xmax state year
+
+// line plot
+twoway (line death_rate year if expanded==1, c(L) lc(538r)), ///
+	xtitle("Year") ///
+	ytitle("Opioid-Related Deaths per 100,000") ///
+	yscale(titlegap(5)) ///
+	xline(2014, lc(538g)) ///
+	title("Opioid-Related Death Rate for Expansion States, 1999-2018", size(medium)) ///
+	name(expansion_state_death_rate, replace)	
+	
+// line plot
+twoway (line death_rate year if expanded==0, c(L)), ///
+	xtitle("Year") ///
+	ytitle("Opioid-Related Deaths per 100,000") ///
+	yscale(titlegap(5)) ///
+	xline(2014, lc(538g)) ///
+	title("Opioid-Related Death Rate for Non-Expansion States, 1999-2018", size(medium)) ///
+	name(nonexpansion_state_death_rate, replace)	
+restore 
+
+// what years did states expand?
+preserve	
+collapse (mean) expanded state_exp_yr, by(state)
+tab state_exp_yr if expanded == 1
+// 25 states expanded on January 1, 2014 
+// 7 states expanded at later dates
+// expansions happened until July of 2016
+restore
+
+
+// regressions!
+
+// restricted sample with non-equivalent comparison group: expansion in 
+// 2014
+preserve
+collapse (sum) deaths population (mean) expanded state_exp_yr state_med_inc-state_blk_pct, by(year state)
+gen death_rate = 1000 * deaths / population
+
+drop if expanded != 0 & state_exp_yr != 2014 // restrict sample to never-expanders and expanded in 2014
+
+collapse (mean) death_rate state_exp_yr, by(year expanded)
+twoway (scatter death_rate year if expanded == 0, mc(538b)) (scatter death_rate year if expanded == 1, mc(538r)), ///
+	title("Opioid Death Rates in Non-Expansion vs 2014 Expansion States", size(medium)) ///
+	legend(label(1 "Non-Expansion") label(2 "Expanded in 2014")) ///
+	ytitle("Opioid-Related Deaths per 100,000") ///
+	xtitle("Year") ///
+	yscale(range(0 .23)) ///
+	yscale(titlegap(5)) ///
+	xline(2014, lp(dash) lc(538g)) ///
+	ylabel(,format(%9.2f)) ///
+	name(comparison_scatter, replace)
+	
+
+// generate centered year variable
+replace year = year - 2014 // center year 
+gen d = year >= 0 // dummy for before / after 2014
+gen d_yr = year * d 
+gen e_yr = year * expanded 
+gen d_e = d * expanded 
+gen d_e_yr = expanded * d_yr 
+
+reg death_rate year d d_yr expanded e_yr d_e d_e_yr 
+
+loc pret0 "function y = `=_b[_cons]' + `=_b[year]'*x, ran(-15 0) "	// comparison control group, pre-policy
+loc post0 "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[d_yr]'*x + `=_b[d]', ran(0 4) "	// comparison control group, post policy
+loc pret1 "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[expanded]' + `=_b[e_yr]'*x, ran(-15 0) "	 // expanded in 2014, pre-policy
+loc post1 "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[d]' + `=_b[d_yr]'*x + `=_b[e_yr]'*x + `=_b[expanded]' + `=_b[d_e]' + `=_b[d_e_yr]'*x, ran(0 4) "	 // expanded in 2014, post-policy
+
+
+twoway (scatter death_rate year if expanded==0, mc(538b)) (scatter death_rate year if expanded==1, mc(538r)) ///
+		(`pret0' lc(538b) ) ///
+		(`pret1' lc(538r) ) ///
+		(`post0' lc(538b) ) ///
+		(`post1' lc(538r) ), ///
+		title("Opioid Death Rates in Non-Expansion vs 2014 Expansion States", margin(b=5)) ///
+		ytitle("Opioid-Related Deaths per 100,000") ///
+		ylab(, angle(hori) labsize(small)) ///
+		xlab(, angle(hori) labsize(small)) ///
+		xtitle("Years after 2014") ///
+		xline(0, lp(dash) lc(538g)) ///
+		leg(ring(0) pos(4) cols(1) order(3 "Non-Expansion" 4 "Expanded in 2014")) ///
+		name(reg_comp_2014, replace)
+
+restore
+
+
+
+// parametric simple interrupted time series with non-equivalent comparison group
+preserve
+collapse (sum) deaths population (mean) expanded state_exp_yr state_med_inc-state_blk_pct, by(year state)
+gen death_rate = 1000 * deaths / population
+
+// generate centered year variable
+gen t_c = year 
+replace t_c = t_c - state_exp_yr if state_exp_yr != .
+
+// generate treatment vs control group
+gen expansion_state = 1
+replace expansion_state = 0 if state_exp_yr == .
+
+// generate year-by-year treatment variable
+gen under = 0
+replace under = 1 if t_c >= 0 & expansion_state == 1
+
+gen t_d = t_c * expansion_state
+gen t_e = t_c * under 
+gen y_sq = year * year
+gen t_sq_d = t_c * t_c * expansion_state
+gen t_sq_e= t_c * t_c * under 
+
+// fully parametric linear
+reg death_rate year expansion_state t_d under t_e 
+
+xtset state // fixed effect by state
+xtreg death_rate year expansion_state t_d under t_e , fe
+
+// quadratic model
+xtset state 
+xtreg death_rate year y_sq expansion_state t_d t_sq_d under t_e t_sq_e, fe
+
+loc mprenon "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x, ran(1999 2018) " // untreated prediction
+loc mpredis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x + `=_b[t_d]' * (x - 2014), ran(1999 2014) "	// treated before dismissal
+loc mpostdis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x + `=_b[t_d]' * (x - 2014) + `=_b[under]' + `=_b[t_e]'* (x - 2014), ran(2014 2018) " // treated after dismissal
+
+twoway (`mprenon' lc(538r) ) ///
+		(`mpredis' lc(538b) ) ///
+		(`mpostdis' lc(538b) ) ///
+		, ///
+		title("Predicted Trends for Non-Expansion and Expansion States", size(medium)) ///
+		ytitle("Opioid-Related Deaths per 100,000") ///
+		ylab(, angle(hori) labsize(small)) ///
+		xlab(, angle(hori) labsize(small)) ///
+		xtitle("Year") ///
+		xline(2014, lp(dash) lc(538g)) ///
+		leg(ring(0) pos(4) cols(1) order(1 "Control" 2 "Treatment (Expanded in 2014)")) ///
+		name(quadratic_trend, replace)
+
+restore
+
