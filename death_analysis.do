@@ -285,7 +285,7 @@ xtreg death_rate year expansion_state t_d under t_e , fe
 // quadratic model
 xtset state 
 xtreg death_rate year y_sq expansion_state t_d t_sq_d under t_e t_sq_e, fe
-restore
+
 loc mprenon "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x, ran(1999 2018) " // untreated prediction
 loc mpredis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x + `=_b[t_d]' * (x - 2014) + `=_b[t_sq_d]' * (x - 2014) * (x - 2014), ran(1999 2014) "	// treated before dismissal
 loc mpostdis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x + `=_b[t_d]' * (x - 2014) + `=_b[t_sq_d]' * (x - 2014) * (x - 2014) + `=_b[under]' + `=_b[t_e]'* (x - 2014) + `=_b[t_sq_e]' * (x - 2014) * (x - 2014), ran(2014 2018) " // treated after dismissal
@@ -348,7 +348,7 @@ preserve
 collapse (sum) deaths population (mean) expanded state_exp_yr state_med_inc-state_blk_pct, by(year state)
 gen death_rate = 1000 * deaths / population
 	
-// generate centered year variable BUT SUBTRACT AN EXTRA YEAR
+// generate centered year variable
 gen t_c = year 
 
 // generate treatment vs control group
@@ -382,7 +382,7 @@ foreach x of numlist 0/3 {
 	estimates store mnlag`x'
 
 }
-esttab mnlag? using falsification_check.rtf , ///
+esttab mnlag? using figures/falsification_check.rtf , ///
 	mtitles("Original" "-1 yr" "-2 yr" "-3 yr") ///
 	cells(b(star fmt(%4.3f)) se(par fmt(%4.3f))) ///
 	stats(r2, lab("R-sq" "p(F) comp. to m1")) ///
@@ -391,3 +391,27 @@ esttab mnlag? using falsification_check.rtf , ///
 restore
 
 // cool other methods to check out: synthetic controls
+// http://econweb.umd.edu/~galiani/files/synth_runner.pdf
+
+preserve
+
+collapse (sum) deaths population (mean) expanded state_exp_yr state_med_inc-state_blk_pct, by(year state)
+gen death_rate = 1000 * deaths / population
+	
+// keep balanced panel of race data
+// bysort state (death_rate) : drop if _N != 20 // must have all 20 years
+drop if year < 2010
+drop if state == 34 | state == 41 // drop ND, SD
+
+// generate year-by-year treatment variable
+gen t_c = year 
+replace t_c = t_c - state_exp_yr - 1 if state_exp_yr != .
+gen under = 0
+replace under = 1 if t_c >= 0 & expanded == 1
+
+tsset state year
+// synth_runner death_rate state_med_inc(1999(1)2013) state_wh_pct(2010(1)2013) state_wh_pct(2010(1)2013), d(under)
+synth_runner death_rate state_med_inc(2010(1)2013) state_wh_pct(2010(1)2013) state_wh_pct(2010(1)2013), d(under)
+effect_graphs, tc_gname("Expansion") sc_name("Synthetic non-expansion") tc_ytitle("Opioid-Related Deaths per 100,000") tc_options(title("Opioid Death Rate Trends for Expansion and Synthetic Control States") yscale(titlegap(5))) effect_options(legend(ring(0) pos(4) cols(1) order(1 "Difference between expansion/synthetic non-expansion")) title("Difference in Opioid Death Rate for Expansion and Synthetic Control States"))
+restore
+
