@@ -148,7 +148,7 @@ restore
 
 preserve
 // per-state opioid death rate trends
-collapse (sum) deaths population (mean) expanded state_med_inc-state_blk_pct, by(year state)
+collapse (sum) deaths population (mean) expanded state_med_inc-state_blk_pct state_exp_yr, by(year state)
 gen death_rate = 1000 * deaths / population
 
 // in order to generate pretty graphs
@@ -156,15 +156,7 @@ egen xmin = min(year), by(state)
 egen xmax = max(year), by(state)
 gsort -xmin -xmax state year
 
-// line plot
-twoway (line death_rate year if expanded==1, c(L) lc(538r)), ///
-	xtitle("Year") ///
-	ytitle("Opioid-Related Deaths per 100,000") ///
-	yscale(titlegap(5)) ///
-	xline(2014, lc(538g)) ///
-	title("Opioid-Related Death Rate for Expansion States, 1999-2018", size(medium)) ///
-	name(expansion_state_death_rate, replace)	
-	
+
 // line plot
 twoway (line death_rate year if expanded==0, c(L)), ///
 	xtitle("Year") ///
@@ -173,6 +165,25 @@ twoway (line death_rate year if expanded==0, c(L)), ///
 	xline(2014, lc(538g)) ///
 	title("Opioid-Related Death Rate for Non-Expansion States, 1999-2018", size(medium)) ///
 	name(nonexpansion_state_death_rate, replace)	
+	
+
+gen year_c = year - state_exp_yr
+// in order to generate pretty graphs
+egen ymin = min(year_c), by(state)
+egen ymax = max(year_c), by(state)
+gsort -ymin -ymax state year_c
+
+// line plot
+twoway (line death_rate year_c if expanded==1, c(L) lc(538r)), ///
+	xtitle("Years After Expansion") ///
+	ytitle("Opioid-Related Deaths per 100,000") ///
+	yscale(titlegap(5)) ///
+	xscale(r(-18 4)) ///
+	xlabel(-18[2]4) ///
+	xline(0, lc(538g)) ///
+	title("Opioid-Related Death Rate for Expansion States, Centered by Expansion Year", size(medium)) ///
+	name(expansion_state_death_rate, replace)	
+	
 restore 
 
 // what years did states expand?
@@ -274,10 +285,10 @@ xtreg death_rate year expansion_state t_d under t_e , fe
 // quadratic model
 xtset state 
 xtreg death_rate year y_sq expansion_state t_d t_sq_d under t_e t_sq_e, fe
-
+restore
 loc mprenon "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x, ran(1999 2018) " // untreated prediction
-loc mpredis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x + `=_b[t_d]' * (x - 2014), ran(1999 2014) "	// treated before dismissal
-loc mpostdis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x + `=_b[t_d]' * (x - 2014) + `=_b[under]' + `=_b[t_e]'* (x - 2014), ran(2014 2018) " // treated after dismissal
+loc mpredis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x + `=_b[t_d]' * (x - 2014) + `=_b[t_sq_d]' * (x - 2014) * (x - 2014), ran(1999 2014) "	// treated before dismissal
+loc mpostdis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x + `=_b[t_d]' * (x - 2014) + `=_b[t_sq_d]' * (x - 2014) * (x - 2014) + `=_b[under]' + `=_b[t_e]'* (x - 2014) + `=_b[t_sq_e]' * (x - 2014) * (x - 2014), ran(2014 2018) " // treated after dismissal
 
 twoway (`mprenon' lc(538r) ) ///
 		(`mpredis' lc(538b) ) ///
@@ -292,5 +303,91 @@ twoway (`mprenon' lc(538r) ) ///
 		leg(ring(0) pos(4) cols(1) order(1 "Control" 2 "Treatment (Expanded in 2014)")) ///
 		name(quadratic_trend, replace)
 
+// robustness check: keep analysis but drop states that expanded in 2014 
+drop if state_exp_yr == 2014
+reg death_rate year expansion_state t_d under t_e 
+
+xtset state // fixed effect by state
+xtreg death_rate year expansion_state t_d under t_e , fe
+
+loc mprenon "function y = `=_b[_cons]' + `=_b[year]'*x , ran(1999 2018) " // untreated prediction
+loc mpredis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[t_d]' * (x - 2015), ran(1999 2015) "	// treated before dismissal
+loc mpostdis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[t_d]' * (x - 2015) + `=_b[under]' + `=_b[t_e]'* (x - 2015), ran(2015 2018) " // treated after dismissal
+
+twoway (`mprenon' lc(538r) ) ///
+		(`mpredis' lc(538b) ) ///
+		(`mpostdis' lc(538b) ) ///
+		, ///
+		title("Predicted Trends for Non-Expansion and Post-2014 Expansion States", size(medium)) ///
+		ytitle("Opioid-Related Deaths per 100,000") ///
+		ylab(, angle(hori) labsize(small)) ///
+		xlab(, angle(hori) labsize(small)) ///
+		xtitle("Year") ///
+		xline(2015, lp(dash) lc(538g)) ///
+		leg(ring(0) pos(4) cols(1) order(1 "Control" 2 "Treatment (Expanded in 2014)")) ///
+		name(post_2014_trend, replace)
+
+
+// quadratic model
+xtset state 
+xtreg death_rate year y_sq expansion_state t_d t_sq_d under t_e t_sq_e, fe
+
+// upshot: fully parametric linear + fixed effect by state regressions both still have
+// statistically significant regression coefficients, quadratic no longer has 
+// stat. significant coefs
 restore
 
+
+// robustness check: run regressions with different years before expansion
+// favorite model: state fixed effects
+// 1 yr - anticipatory effects?
+// https://www.journals.uchicago.edu/doi/full/10.1162/ajhe_a_00088?mobileUi=0&
+// CA increased payments to insurers in anticipation of Medicaid rollout: https://www.latimes.com/business/la-fi-medicaid-insurance-profits-20171101-story.html
+preserve
+
+collapse (sum) deaths population (mean) expanded state_exp_yr state_med_inc-state_blk_pct, by(year state)
+gen death_rate = 1000 * deaths / population
+	
+// generate centered year variable BUT SUBTRACT AN EXTRA YEAR
+gen t_c = year 
+
+// generate treatment vs control group
+gen expansion_state = 1
+replace expansion_state = 0 if state_exp_yr == .
+
+// generate year-by-year treatment variable
+gen under = 0
+replace under = 1 if t_c >= 0 & expansion_state == 1
+
+gen t_d = t_c * expansion_state
+gen t_e = t_c * under 
+gen y_sq = year * year
+gen t_sq_d = t_c * t_c * expansion_state
+gen t_sq_e= t_c * t_c * under 
+	
+	
+foreach x of numlist 0/3 {
+	// replace all vars that are time-dependent
+	replace t_c = year 
+	replace t_c = t_c - state_exp_yr - `x' if state_exp_yr != .
+	
+	replace under = 0
+	replace under = 1 if t_c >= 0 & expansion_state == 1
+	
+	replace t_d = t_c * expansion_state
+	replace t_e = t_c * under 
+
+	xtset state // fixed effect by state
+	xtreg death_rate year expansion_state t_d under t_e , fe
+	estimates store mnlag`x'
+
+}
+esttab mnlag?, ///
+	mtitles[("Original" "1 yr" "2 yr" "3 yr")]  ///
+	cells(b(star fmt(%4.3f)) se(par fmt(%4.3f))) ///
+	stats(r2, lab("R-sq" "p(F) comp. to m1")) ///
+	varwidth(20)
+
+restore
+
+// cool other methods to check out: synthetic controls
