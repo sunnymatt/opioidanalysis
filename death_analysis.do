@@ -382,8 +382,8 @@ foreach x of numlist 0/3 {
 	estimates store mnlag`x'
 
 }
-esttab mnlag?, ///
-	mtitles[("Original" "1 yr" "2 yr" "3 yr")]  ///
+esttab mnlag? using falsification_check.rtf , ///
+	mtitles("Original" "-1 yr" "-2 yr" "-3 yr") ///
 	cells(b(star fmt(%4.3f)) se(par fmt(%4.3f))) ///
 	stats(r2, lab("R-sq" "p(F) comp. to m1")) ///
 	varwidth(20)
