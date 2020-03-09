@@ -146,6 +146,53 @@ twoway (connected state_wh_pct year if expanded==0, lc(538b) mc(none) lw(medthic
 	name(race_time, replace)
 restore
 
+// utilization 
+preserve 
+collapse (mean) state_mc_units expanded (sum) population, by(state year)
+
+egen ymin = min(year), by(state)
+egen ymax = max(year), by(state)
+gsort -ymin -ymax state year
+
+// line plot
+twoway (line state_mc_units year, c(L) lc(538r)), ///
+	xtitle("Years After Expansion") ///
+	ytitle("Total Number of Opioid Units Reimbursed") ///
+	yscale(titlegap(5)) ///
+	title("Units of Opioids Reimbursed Over Time, 1999-2018", size(medium)) ///
+	name(opioid_prescriptions, replace)
+
+collapse (sum) state_mc_units, by(year expanded)
+
+twoway (connected state_mc_units year if expanded==0, lc(538b) mc(none) lw(medthick)) ///
+	(connected state_mc_units year if expanded==1, lc(538r) mc(none) lw(medthick)), ///
+	xtitle("Year") ///
+	ytitle("Total number of units of opioids reimbursed per capita") ///
+	yscale(titlegap(5) r(0 1)) ///
+	xline(2014, lc(538g)) ///
+	legend(label(1 "Non-expansion") label(2 "Expansion")) ///
+	title("Total Units of Opioids Reimbursed Per Capita in Expansion and Non-Expansion States, 1999-2018", size(small)) ///
+	name(race_time, replace)
+
+restore
+
+// average units reimbursed per person by expansion status
+preserve
+collapse (sum) population (mean) expanded state_mc_units, by(year state)
+gen util_rate = state_mc_units / population
+collapse (mean) util_rate state_mc_units, by(year expanded)
+
+twoway (connected util_rate year if expanded==0, lc(538b) mc(none) lw(medthick)) ///
+	(connected util_rate year if expanded==1, lc(538r) mc(none) lw(medthick)), ///
+	xtitle("Year") ///
+	ytitle("Average number of units of opioids reimbursed per capita") ///
+	yscale(titlegap(5) r(0 1)) ///
+	xline(2014, lc(538g)) ///
+	legend(label(1 "Non-expansion") label(2 "Expansion")) ///
+	title("Average Units of Opioids Reimbursed Per Capita in Expansion and Non-Expansion States, 1999-2018", size(small)) ///
+	name(race_time, replace)
+restore
+
 preserve
 // per-state opioid death rate trends
 collapse (sum) deaths population (mean) expanded state_med_inc-state_blk_pct state_exp_yr, by(year state)
@@ -228,6 +275,7 @@ gen d_e = d * expanded
 gen d_e_yr = expanded * d_yr 
 
 reg death_rate year d d_yr expanded e_yr d_e d_e_yr 
+outreg2 using figures/reg/reg_2014_linear.rtf, replace
 
 loc pret0 "function y = `=_b[_cons]' + `=_b[year]'*x, ran(-15 0) "	// comparison control group, pre-policy
 loc post0 "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[d_yr]'*x + `=_b[d]', ran(0 4) "	// comparison control group, post policy
@@ -278,13 +326,17 @@ gen t_sq_e= t_c * t_c * under
 
 // fully parametric linear
 reg death_rate year expansion_state t_d under t_e 
+est sto m1
 
 xtset state // fixed effect by state
 xtreg death_rate year expansion_state t_d under t_e , fe
+est sto m2
 
 // quadratic model
 xtset state 
 xtreg death_rate year y_sq expansion_state t_d t_sq_d under t_e t_sq_e, fe
+est sto m3
+
 
 loc mprenon "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x, ran(1999 2018) " // untreated prediction
 loc mpredis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[y_sq]'*x*x + `=_b[t_d]' * (x - 2014) + `=_b[t_sq_d]' * (x - 2014) * (x - 2014), ran(1999 2014) "	// treated before dismissal
@@ -309,6 +361,7 @@ reg death_rate year expansion_state t_d under t_e
 
 xtset state // fixed effect by state
 xtreg death_rate year expansion_state t_d under t_e , fe
+outreg2 using figures/reg/reg_post2014_linear.rtf, replace
 
 loc mprenon "function y = `=_b[_cons]' + `=_b[year]'*x , ran(1999 2018) " // untreated prediction
 loc mpredis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[t_d]' * (x - 2015), ran(1999 2015) "	// treated before dismissal
@@ -327,10 +380,10 @@ twoway (`mprenon' lc(538r) ) ///
 		leg(ring(0) pos(4) cols(1) order(1 "Control" 2 "Treatment (Expanded in 2014)")) ///
 		name(post_2014_trend, replace)
 
-
-// quadratic model
-xtset state 
-xtreg death_rate year y_sq expansion_state t_d t_sq_d under t_e t_sq_e, fe
+// esttab m? using figures/reg/reg_all_dd.rtf, replace ///
+// 	cells(b(star fmt(%4.3f)) se(par fmt(%4.3f))) ///
+// 	stats(r2, lab("R-sq" "p(F) comp. to m1")) ///
+// 	varwidth(20)
 
 // upshot: fully parametric linear + fixed effect by state regressions both still have
 // statistically significant regression coefficients, quadratic no longer has 
@@ -382,7 +435,7 @@ foreach x of numlist 0/3 {
 	estimates store mnlag`x'
 
 }
-esttab mnlag? using figures/falsification_check.rtf , ///
+esttab mnlag? using figures/reg/falsification_check.rtf, replace ///
 	mtitles("Original" "-1 yr" "-2 yr" "-3 yr") ///
 	cells(b(star fmt(%4.3f)) se(par fmt(%4.3f))) ///
 	stats(r2, lab("R-sq" "p(F) comp. to m1")) ///
@@ -414,4 +467,50 @@ tsset state year
 synth_runner death_rate state_med_inc(2010(1)2013) state_wh_pct(2010(1)2013) state_wh_pct(2010(1)2013), d(under)
 effect_graphs, tc_gname("Expansion") sc_name("Synthetic non-expansion") tc_ytitle("Opioid-Related Deaths per 100,000") tc_options(title("Opioid Death Rate Trends for Expansion and Synthetic Control States") yscale(titlegap(5))) effect_options(legend(ring(0) pos(4) cols(1) order(1 "Difference between expansion/synthetic non-expansion")) title("Difference in Opioid Death Rate for Expansion and Synthetic Control States"))
 restore
+
+// ITS regression for utilization data
+// parametric simple interrupted time series with non-equivalent comparison group
+preserve
+collapse (mean) expanded state_exp_yr state_med_inc state_mc_units, by(year state)
+
+// generate centered year variable
+gen t_c = year 
+replace t_c = t_c - state_exp_yr if state_exp_yr != .
+
+// generate year-by-year treatment variable
+gen under = 0
+replace under = 1 if t_c >= 0 & expanded == 1
+
+gen t_d = t_c * expanded
+gen t_e = t_c * under 
+gen y_sq = year * year
+gen t_sq_d = t_c * t_c * expanded
+gen t_sq_e= t_c * t_c * under 
+
+// fully parametric linear
+reg state_mc_units year expanded t_d under t_e
+
+xtset state // fixed effect by state
+xtreg state_mc_units year expanded t_d under t_e , fe
+
+
+loc mprenon "function y = `=_b[_cons]' + `=_b[year]'*x , ran(1999 2018) " // untreated prediction
+loc mpredis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[t_d]' * (x - 2014), ran(1999 2014) "	// treated before dismissal
+loc mpostdis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[t_d]' * (x - 2014) + `=_b[under]' + `=_b[t_e]'* (x - 2014), ran(2014 2018) " // treated after dismissal
+
+twoway (`mprenon' lc(538b) ) ///
+		(`mpredis' lc(538r) ) ///
+		(`mpostdis' lc(538r) ) ///
+		, ///
+		title("Predicted Trends in Opioid Prescriptions for Non-Expansion and Post-2014 Expansion States", size(small)) ///
+		ytitle("Number of units of opioids reimbursed by Medicaid") ///
+		ylab(, angle(hori) labsize(small)) ///
+		xlab(, angle(hori) labsize(small)) ///
+		yscale(titlegap(7)) ///
+		xtitle("Year") ///
+		xline(2014, lp(dash) lc(538g)) ///
+		leg(ring(0) pos(4) cols(1) order(1 "Control" 2 "Treatment (Expanded in 2014)")) ///
+		name(opioid_prescr_prediction, replace)
+	
+restore 
 

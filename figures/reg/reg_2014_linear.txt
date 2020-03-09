@@ -1,0 +1,24 @@
+	(1)
+VARIABLES	death_rate
+	
+year	0.00391***
+	(0.000361)
+d	0.00371
+	(0.00571)
+d_yr	0.00415**
+	(0.00194)
+expanded	0.0254***
+	(0.00464)
+e_yr	0.00144***
+	(0.000510)
+d_e	0.0121
+	(0.00808)
+d_e_yr	0.0102***
+	(0.00275)
+Constant	0.0875***
+	(0.00328)
+	
+Observations	40
+R-squared	0.983
+Standard errors in parentheses	
+*** p<0.01, ** p<0.05, * p<0.1	

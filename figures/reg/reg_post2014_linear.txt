@@ -1,0 +1,21 @@
+	(1)
+VARIABLES	death_rate
+	
+year	0.00503***
+	(0.000241)
+o.expansion_state	-
+	
+t_d	-0.000154
+	(0.000584)
+under	0.0215**
+	(0.0109)
+t_e	0.0268***
+	(0.00512)
+Constant	-10.03***
+	(0.485)
+	
+Observations	488
+Number of state	26
+R-squared	0.665
+Standard errors in parentheses	
+*** p<0.01, ** p<0.05, * p<0.1	
