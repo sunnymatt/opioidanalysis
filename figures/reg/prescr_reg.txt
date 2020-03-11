@@ -1,0 +1,21 @@
+	(1)
+VARIABLES	state_mc_units
+	
+year	902,872***
+	(78,647)
+o.expanded	-
+	
+t_d	572,112***
+	(119,457)
+under	6.280e+06***
+	(1.438e+06)
+t_e	-3.212e+06***
+	(507,600)
+Constant	-1.800e+09***
+	(1.583e+08)
+	
+Observations	953
+Number of state	51
+R-squared	0.449
+Standard errors in parentheses	
+*** p<0.01, ** p<0.05, * p<0.1	

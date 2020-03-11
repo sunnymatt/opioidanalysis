@@ -435,12 +435,41 @@ foreach x of numlist 0/3 {
 	estimates store mnlag`x'
 
 }
-esttab mnlag? using figures/reg/falsification_check.rtf, replace ///
-	mtitles("Original" "-1 yr" "-2 yr" "-3 yr") ///
-	cells(b(star fmt(%4.3f)) se(par fmt(%4.3f))) ///
-	stats(r2, lab("R-sq" "p(F) comp. to m1")) ///
-	varwidth(20)
+// esttab mnlag? using figures/reg/falsification_check.rtf, replace ///
+// 	mtitles("Original" "-1 yr" "-2 yr" "-3 yr") ///
+// 	cells(b(star fmt(%4.3f)) se(par fmt(%4.3f))) ///
+// 	stats(r2, lab("R-sq" "p(F) comp. to m1")) ///
+// 	varwidth(20)
 
+// event study specification
+// reset centered year to t_c = 0
+gen state_exp_yr_rnd = round(state_exp_yr) // have to round year b/c event study
+replace t_c = 0 
+replace t_c = year - state_exp_yr_rnd if state_exp_yr_rnd != .
+// now we add so there are no negative years, which we need to run the regression
+gen t_c_pos = t_c + 18
+
+// for relabeling when we generate the coeflist graph
+local map = ""
+foreach x of numlist 1/22 {
+	local num = `x' - 18
+	local map = "`map' `x'.t_c_pos=`num'"
+}
+di `map'
+
+xtset state // fixed effect by state
+// regress with year fixed effect, omitting year 18 (treatment year)
+xtreg death_rate io18.t_c_pos i.year t_c, fe
+coefplot, ///
+	drop(_cons *.year t_c) ///
+	vertical ///
+	xlabel(, angle(vertical)) ///
+	ytitle("Value of coefficient estimate (+95% CI)") ///
+	xtitle("{&beta}{subscript:i} (in {&beta}{subscript:i} D{superscript:t*=i})") ///
+	yline(0) ///
+	rename(`map') ///
+	title("Event Study Robustness Check")
+	
 restore
 
 // cool other methods to check out: synthetic controls
@@ -492,7 +521,7 @@ reg state_mc_units year expanded t_d under t_e
 
 xtset state // fixed effect by state
 xtreg state_mc_units year expanded t_d under t_e , fe
-
+outreg2 using figures/reg/prescr_reg.rtf, replace
 
 loc mprenon "function y = `=_b[_cons]' + `=_b[year]'*x , ran(1999 2018) " // untreated prediction
 loc mpredis "function y = `=_b[_cons]' + `=_b[year]'*x + `=_b[t_d]' * (x - 2014), ran(1999 2014) "	// treated before dismissal
